@@ -1,4 +1,4 @@
-.PHONY: run test test-race cover fmt vet check test-v
+.PHONY: run test test-race cover fmt vet check test-v mutation
 
 run:
 	go run ./cmd/api
@@ -23,3 +23,6 @@ vet:
 	go vet ./...
 
 check: fmt vet test-race
+
+mutation:
+	gremlins unleash

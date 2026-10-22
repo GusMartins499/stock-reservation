@@ -1,0 +1,4 @@
+unleash:
+  timeout-coefficient: 10
+  threshold:
+    efficacy: 80

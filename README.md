@@ -21,3 +21,13 @@ Work in progress — see [docs/ROADMAP.md](docs/ROADMAP.md).
 make run
 make test-race
 ```
+
+## Mutation testing
+
+Coverage shows which lines the tests run; mutation testing shows whether the tests catch bugs. [Gremlins](https://github.com/go-gremlins/gremlins) introduces small changes (mutants) into the code, such as flipping `<` to `<=`, and runs the tests against each one. A mutant is *killed* when a test fails and *lived* when every test still passes.
+
+Efficacy is `killed / (killed + lived)`. The build fails when efficacy is not above the 80% threshold set in [.gremlins.yaml](.gremlins.yaml). In CI, only lines changed by the pull request are mutated, and the check is skipped when those lines have no mutants.
+
+```bash
+make mutation
+```

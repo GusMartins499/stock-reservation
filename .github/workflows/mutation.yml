@@ -1,0 +1,30 @@
+name: mutation
+
+on:
+  pull_request:
+
+jobs:
+  gremlins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install gremlins
+        run: go install github.com/go-gremlins/gremlins/cmd/gremlins@v0.6.0
+
+      - name: Find mutants in the diff
+        id: dry-run
+        run: |
+          if gremlins unleash --dry-run --diff "origin/$GITHUB_BASE_REF" --output-statuses r | grep RUNNABLE; then
+            echo "runnable=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run mutation testing
+        if: steps.dry-run.outputs.runnable == 'true'
+        run: gremlins unleash --diff "origin/$GITHUB_BASE_REF" --output-statuses l
