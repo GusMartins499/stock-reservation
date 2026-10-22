@@ -1,10 +1,13 @@
-.PHONY: run test test-race cover fmt vet check
+.PHONY: run test test-race cover fmt vet check test-v
 
 run:
 	go run ./cmd/api
 
 test:
 	go test ./...
+
+test-v:
+	go test ./... -v
 
 test-race:
 	go test -race ./...
