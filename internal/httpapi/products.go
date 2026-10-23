@@ -22,13 +22,13 @@ func (api *API) createProduct(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeJSON(w, http.StatusBadRequest, errorJSON{Error: "invalid JSON body"})
 		return
 	}
 
 	p := inventory.Product{SKU: req.SKU, Name: req.Name, Stock: req.Stock}
 	if err := api.store.AddProduct(p); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, err)
 		return
 	}
 
@@ -38,7 +38,7 @@ func (api *API) createProduct(w http.ResponseWriter, r *http.Request) {
 func (api *API) getProduct(w http.ResponseWriter, r *http.Request) {
 	p, err := api.store.GetProduct(r.PathValue("sku"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, err)
 		return
 	}
 
