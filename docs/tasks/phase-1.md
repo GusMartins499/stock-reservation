@@ -84,6 +84,7 @@ A function that maps domain errors to status codes, always responding with JSON 
 | `ErrProductAlreadyExists` | 409 |
 | `ErrInsufficientStock` | 409 |
 | `ErrInvalidQuantity` | 422 |
+| `ErrInvalidSKU` | 400 |
 | Invalid JSON | 400 |
 | anything else | 500 |
 
