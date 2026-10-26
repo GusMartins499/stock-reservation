@@ -34,15 +34,45 @@ Table-driven tests for `Reserve` and `AddProduct`, comparing errors with [`error
 
 ## Day 2 — HTTP
 
-In `internal/httpapi/handlers.go`, a `Handler` type that receives `*inventory.Store` and a `Routes() http.Handler` method using `http.NewServeMux()` with Go 1.22+ patterns:
+Today only the happy path. Errors and tests come on Day 3; until then, on any error respond with `http.Error(w, err.Error(), http.StatusBadRequest)`.
 
-- `POST /products` — `{"sku": "...", "name": "...", "stock": 10}` → `201`
-- `GET /products/{sku}` — `r.PathValue("sku")` → `200`
-- `POST /reservations` — `{"sku": "...", "quantity": 2}` → `201`
+Reading first: [Routing enhancements in Go 1.22](https://go.dev/blog/routing-enhancements).
 
-In `cmd/api/main.go`: create the store and the handler, call `http.ListenAndServe(":8080", ...)`.
+### Step 1 — the `API` type
 
-Reading: [Routing enhancements in Go 1.22](https://go.dev/blog/routing-enhancements).
+In `internal/httpapi/handlers.go` (`package httpapi`), a struct `API` with one field: the `*inventory.Store`. Plus a `NewAPI(store *inventory.Store) *API` function, like `NewStore`.
+
+### Step 2 — one method per route
+
+Each route is a method of `*API` with the handler signature:
+
+```go
+func (a *API) createProduct(w http.ResponseWriter, r *http.Request)
+func (a *API) getProduct(w http.ResponseWriter, r *http.Request)
+func (a *API) createReservation(w http.ResponseWriter, r *http.Request)
+```
+
+- `POST /products` — body `{"sku": "...", "name": "...", "stock": 10}` → calls `AddProduct` → `201` with the product as JSON
+- `GET /products/{sku}` — reads the SKU with `r.PathValue("sku")` → calls `GetProduct` → `200` with the product as JSON
+- `POST /reservations` — body `{"sku": "...", "quantity": 2}` → calls `Reserve` → `201`
+
+Request and response bodies use their own structs in `httpapi` with JSON tags (`json:"sku"`); the `inventory` package stays free of HTTP concerns.
+
+### Step 3 — `Routes()` connects URLs to methods
+
+```go
+func (a *API) Routes() http.Handler
+```
+
+Inside: create a router with `http.NewServeMux()`, register each method with `mux.HandleFunc("POST /products", a.createProduct)` (no parentheses after `a.createProduct`), and return the mux.
+
+### Step 4 — `cmd/api/main.go`
+
+`package main`: create the store, create the API with `NewAPI(store)`, and start the server with `http.ListenAndServe(":8080", api.Routes())`, wrapped in `log.Fatal(...)`.
+
+### Done when
+
+`make run` in one terminal, the `curl` commands from Day 3 in another, and all three routes answer on the happy path.
 
 ## Day 3 — HTTP errors and handler tests
 
@@ -54,6 +84,7 @@ A function that maps domain errors to status codes, always responding with JSON 
 | `ErrProductAlreadyExists` | 409 |
 | `ErrInsufficientStock` | 409 |
 | `ErrInvalidQuantity` | 422 |
+| `ErrInvalidSKU` | 400 |
 | Invalid JSON | 400 |
 | anything else | 500 |
 

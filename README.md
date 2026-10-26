@@ -22,6 +22,24 @@ make run
 make test-race
 ```
 
+## Endpoints
+
+```bash
+curl -i -X POST localhost:8080/products -d '{"sku":"PS5","name":"PlayStation 5","stock":3}'
+```
+
+```bash
+curl -i localhost:8080/products/PS5
+```
+
+```bash
+curl -i -X POST localhost:8080/reservations -d '{"sku":"PS5","quantity":2}'
+```
+
+```bash
+curl -i localhost:8080/products/XBOX
+```
+
 ## Mutation testing
 
 Coverage shows which lines the tests run; mutation testing shows whether the tests catch bugs. [Gremlins](https://github.com/go-gremlins/gremlins) introduces small changes (mutants) into the code, such as flipping `<` to `<=`, and runs the tests against each one. A mutant is *killed* when a test fails and *lived* when every test still passes.
