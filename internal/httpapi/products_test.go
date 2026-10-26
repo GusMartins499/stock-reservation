@@ -78,3 +78,64 @@ func TestAPI_CreateProduct(t *testing.T) {
 		})
 	}
 }
+
+func TestAPI_GetProduct(t *testing.T) {
+	const registeredSKU = "PS"
+
+	tests := []struct {
+		name        string
+		sku         string
+		existing    []inventory.Product
+		wantProduct productJSON
+		wantStatus  int
+	}{
+		{
+			name:       "returns 404 for product not found",
+			sku:        "xbox",
+			existing:   []inventory.Product{{SKU: registeredSKU, Name: "Playstation", Stock: 2}},
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name:        "returns 200 and return product",
+			wantProduct: productJSON{SKU: registeredSKU, Name: "Playstation", Stock: 2},
+			existing:    []inventory.Product{{SKU: registeredSKU, Name: "Playstation", Stock: 2}},
+			sku:         registeredSKU,
+			wantStatus:  http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := inventory.NewStore()
+			api := NewAPI(store)
+			for _, p := range tt.existing {
+				if err := store.AddProduct(p); err != nil {
+					t.Fatalf("setup: AddProduct(%+v): %v", p, err)
+				}
+			}
+			endpoint := "/products/" + tt.sku
+			req := httptest.NewRequest(http.MethodGet, endpoint, nil)
+			rec := httptest.NewRecorder()
+			api.Routes().ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Errorf("GET %s status = %d, want %d body:%q", endpoint, rec.Code, tt.wantStatus, rec.Body.String())
+			}
+
+			contentType := rec.Header().Get("Content-Type")
+			if contentType != "application/json" {
+				t.Errorf("GET %s Content-Type = %q, want %q, body: %q", endpoint, contentType, "application/json", rec.Body.String())
+			}
+
+			var got productJSON
+			if tt.wantStatus == http.StatusOK {
+				if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+					t.Fatalf("decode body %q: %v", rec.Body.String(), err)
+				}
+				if got != tt.wantProduct {
+					t.Errorf("GET %s body = %+v, want %+v body: %q", endpoint, got, tt.wantProduct, rec.Body.String())
+				}
+			}
+		})
+	}
+}
