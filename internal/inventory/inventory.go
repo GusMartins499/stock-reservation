@@ -3,6 +3,7 @@ package inventory
 import (
 	"errors"
 	"strings"
+	"sync"
 )
 
 type Product struct {
@@ -20,6 +21,7 @@ var (
 )
 
 type Store struct {
+	mu       sync.Mutex
 	products map[string]*Product
 }
 
@@ -28,6 +30,9 @@ func NewStore() *Store {
 }
 
 func (s *Store) GetProduct(sku string) (Product, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if p, exists := s.products[sku]; exists {
 		return *p, nil
 	}
@@ -39,6 +44,9 @@ func (s *Store) Reserve(sku string, qty int) error {
 		return ErrInvalidQuantity
 	}
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	product, exists := s.products[sku]
 
 	if !exists {
@@ -48,13 +56,15 @@ func (s *Store) Reserve(sku string, qty int) error {
 	if product.Stock < qty {
 		return ErrInsufficientStock
 	}
-
 	product.Stock -= qty
 
 	return nil
 }
 
 func (s *Store) AddProduct(p Product) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if p.Stock < 0 {
 		return ErrInvalidQuantity
 	}
