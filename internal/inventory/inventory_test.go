@@ -2,8 +2,38 @@ package inventory
 
 import (
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
+
+func TestReserve_ConcurrentBuyersNeverOversell(t *testing.T) {
+	store := NewStore()
+	if err := store.AddProduct(Product{SKU: "MAC", Name: "Macbook pro", Stock: 100}); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	var wg sync.WaitGroup
+	var counter atomic.Int64
+
+	for range 1000 {
+		wg.Go(func() {
+			if err := store.Reserve("MAC", 1); err == nil {
+				counter.Add(1)
+			}
+		})
+	}
+	wg.Wait()
+	if got := counter.Load(); got != 100 {
+		t.Errorf("successful reservations = %d, want 100", got)
+	}
+	p, err := store.GetProduct("MAC")
+	if err != nil {
+		t.Fatalf("GetProduct(%q) error = %v", "MAC", err)
+	}
+	if p.Stock != 0 {
+		t.Errorf("stock after concurrent reservations = %d, want 0", p.Stock)
+	}
+}
 
 func TestAddProduct(t *testing.T) {
 	tests := []struct {
