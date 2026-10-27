@@ -128,3 +128,19 @@ func TestReserve(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkReserve(b *testing.B) {
+	store := NewStore()
+	if err := store.AddProduct(Product{SKU: "MAC", Name: "Macbook pro", Stock: b.N}); err != nil {
+		b.Fatalf("setup: %v", err)
+	}
+	b.ResetTimer()
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			if err := store.Reserve("MAC", 1); err != nil {
+				b.Errorf("Reserve(%q, 1) error = %v", "MAC", err)
+			}
+		}
+	})
+}
