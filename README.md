@@ -15,6 +15,10 @@ During events like Black Friday, a single product can receive tens of thousands 
 
 Work in progress — see [docs/ROADMAP.md](docs/ROADMAP.md).
 
+## Phase 1
+
+Concurrent in-memory core: HTTP API, a test that proves overselling under concurrent reservations, and the `sync.Mutex` fix. Notes: [English](docs/notes/phase-1.md) · [Português](docs/notes/phase-1.pt-BR.md).
+
 ## Running
 
 ```bash
