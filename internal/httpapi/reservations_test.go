@@ -66,7 +66,7 @@ func TestAPI_CreateReservation(t *testing.T) {
 			store := inventory.NewStore()
 			api := NewAPI(store)
 			for _, p := range tt.existing {
-				if err := store.AddProduct(p); err != nil {
+				if err := store.AddProduct(t.Context(), p); err != nil {
 					t.Fatalf("setup: AddProduct(%+v): %v", p, err)
 				}
 			}
@@ -85,7 +85,7 @@ func TestAPI_CreateReservation(t *testing.T) {
 				}
 			}
 
-			p, err := store.GetProduct("PS")
+			p, err := store.GetProduct(t.Context(), "PS")
 			if err != nil {
 				t.Fatalf("GetProduct(%q): %v", "PS", err)
 			}

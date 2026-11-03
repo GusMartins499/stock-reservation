@@ -52,7 +52,7 @@ func TestAPI_CreateProduct(t *testing.T) {
 			store := inventory.NewStore()
 			api := NewAPI(store)
 			for _, p := range tt.existing {
-				if err := store.AddProduct(p); err != nil {
+				if err := store.AddProduct(t.Context(), p); err != nil {
 					t.Fatalf("setup: AddProduct(%+v): %v", p, err)
 				}
 			}
@@ -109,7 +109,7 @@ func TestAPI_GetProduct(t *testing.T) {
 			store := inventory.NewStore()
 			api := NewAPI(store)
 			for _, p := range tt.existing {
-				if err := store.AddProduct(p); err != nil {
+				if err := store.AddProduct(t.Context(), p); err != nil {
 					t.Fatalf("setup: AddProduct(%+v): %v", p, err)
 				}
 			}

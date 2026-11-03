@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"sync"
@@ -29,7 +30,7 @@ func NewStore() *Store {
 	return &Store{products: make(map[string]*Product)}
 }
 
-func (s *Store) GetProduct(sku string) (Product, error) {
+func (s *Store) GetProduct(ctx context.Context, sku string) (Product, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -39,7 +40,7 @@ func (s *Store) GetProduct(sku string) (Product, error) {
 	return Product{}, ErrProductNotFound
 }
 
-func (s *Store) Reserve(sku string, qty int) error {
+func (s *Store) Reserve(ctx context.Context, sku string, qty int) error {
 	if qty <= 0 {
 		return ErrInvalidQuantity
 	}
@@ -61,7 +62,7 @@ func (s *Store) Reserve(sku string, qty int) error {
 	return nil
 }
 
-func (s *Store) AddProduct(p Product) error {
+func (s *Store) AddProduct(ctx context.Context, p Product) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
