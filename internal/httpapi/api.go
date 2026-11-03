@@ -1,11 +1,21 @@
 package httpapi
 
-import "github.com/GusMartins499/stock-reservation/internal/inventory"
+import (
+	"context"
 
-type API struct {
-	store *inventory.Store
+	"github.com/GusMartins499/stock-reservation/internal/inventory"
+)
+
+type Store interface {
+	AddProduct(ctx context.Context, p inventory.Product) error
+	GetProduct(ctx context.Context, sku string) (inventory.Product, error)
+	Reserve(ctx context.Context, sku string, qty int) error
 }
 
-func NewAPI(store *inventory.Store) *API {
+type API struct {
+	store Store
+}
+
+func NewAPI(store Store) *API {
 	return &API{store: store}
 }

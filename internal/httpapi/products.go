@@ -27,7 +27,7 @@ func (api *API) createProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p := inventory.Product{SKU: req.SKU, Name: req.Name, Stock: req.Stock}
-	if err := api.store.AddProduct(p); err != nil {
+	if err := api.store.AddProduct(r.Context(), p); err != nil {
 		writeError(w, err)
 		return
 	}
@@ -36,7 +36,7 @@ func (api *API) createProduct(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) getProduct(w http.ResponseWriter, r *http.Request) {
-	p, err := api.store.GetProduct(r.PathValue("sku"))
+	p, err := api.store.GetProduct(r.Context(), r.PathValue("sku"))
 	if err != nil {
 		writeError(w, err)
 		return

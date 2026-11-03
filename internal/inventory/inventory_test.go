@@ -9,7 +9,7 @@ import (
 
 func TestReserve_ConcurrentBuyersNeverOversell(t *testing.T) {
 	store := NewStore()
-	if err := store.AddProduct(Product{SKU: "MAC", Name: "Macbook pro", Stock: 100}); err != nil {
+	if err := store.AddProduct(t.Context(), Product{SKU: "MAC", Name: "Macbook pro", Stock: 100}); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 	var wg sync.WaitGroup
@@ -17,7 +17,7 @@ func TestReserve_ConcurrentBuyersNeverOversell(t *testing.T) {
 
 	for range 1000 {
 		wg.Go(func() {
-			if err := store.Reserve("MAC", 1); err == nil {
+			if err := store.Reserve(t.Context(), "MAC", 1); err == nil {
 				counter.Add(1)
 			}
 		})
@@ -26,7 +26,7 @@ func TestReserve_ConcurrentBuyersNeverOversell(t *testing.T) {
 	if got := counter.Load(); got != 100 {
 		t.Errorf("successful reservations = %d, want 100", got)
 	}
-	p, err := store.GetProduct("MAC")
+	p, err := store.GetProduct(t.Context(), "MAC")
 	if err != nil {
 		t.Fatalf("GetProduct(%q) error = %v", "MAC", err)
 	}
@@ -67,16 +67,16 @@ func TestAddProduct(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			store := NewStore()
 			for _, p := range tt.existing {
-				if err := store.AddProduct(p); err != nil {
+				if err := store.AddProduct(t.Context(), p); err != nil {
 					t.Fatalf("setup: %v", err)
 				}
 			}
-			err := store.AddProduct(tt.product)
+			err := store.AddProduct(t.Context(), tt.product)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("AddProduct() error = %+v, want %v", err, tt.wantErr)
 			}
 			if tt.wantErr == nil {
-				got, err := store.GetProduct(tt.product.SKU)
+				got, err := store.GetProduct(t.Context(), tt.product.SKU)
 				if err != nil {
 					t.Fatalf("GetProduct() error = %v", err)
 				}
@@ -111,14 +111,14 @@ func TestReserve(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := NewStore()
-			if err := store.AddProduct(Product{Name: "Playstation 5", SKU: registeredSKU, Stock: tt.stock}); err != nil {
+			if err := store.AddProduct(t.Context(), Product{Name: "Playstation 5", SKU: registeredSKU, Stock: tt.stock}); err != nil {
 				t.Fatalf("setup: %v", err)
 			}
-			err := store.Reserve(tt.sku, tt.qty)
+			err := store.Reserve(t.Context(), tt.sku, tt.qty)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("Reserve() error = %v, want %v", err, tt.wantErr)
 			}
-			got, err := store.GetProduct(registeredSKU)
+			got, err := store.GetProduct(t.Context(), registeredSKU)
 			if err != nil {
 				t.Fatalf("GetProduct() error = %v", err)
 			}
@@ -131,14 +131,14 @@ func TestReserve(t *testing.T) {
 
 func BenchmarkReserve(b *testing.B) {
 	store := NewStore()
-	if err := store.AddProduct(Product{SKU: "MAC", Name: "Macbook pro", Stock: b.N}); err != nil {
+	if err := store.AddProduct(b.Context(), Product{SKU: "MAC", Name: "Macbook pro", Stock: b.N}); err != nil {
 		b.Fatalf("setup: %v", err)
 	}
 	b.ResetTimer()
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			if err := store.Reserve("MAC", 1); err != nil {
+			if err := store.Reserve(b.Context(), "MAC", 1); err != nil {
 				b.Errorf("Reserve(%q, 1) error = %v", "MAC", err)
 			}
 		}

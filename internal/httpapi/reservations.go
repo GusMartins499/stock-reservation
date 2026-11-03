@@ -19,7 +19,7 @@ func (api *API) createReservation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := api.store.Reserve(req.SKU, req.Quantity); err != nil {
+	if err := api.store.Reserve(r.Context(), req.SKU, req.Quantity); err != nil {
 		writeError(w, err)
 		return
 	}
