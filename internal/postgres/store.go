@@ -32,3 +32,18 @@ func (s *Store) AddProduct(ctx context.Context, p inventory.Product) error {
 	}
 	return err
 }
+
+func (s *Store) GetProduct(ctx context.Context, sku string) (inventory.Product, error) {
+	var p inventory.Product
+	err := s.pool.QueryRow(ctx,
+		`SELECT sku, name, stock FROM products WHERE sku = $1`,
+		sku,
+	).Scan(&p.SKU, &p.Name, &p.Stock)
+	if err != nil {
+		if isNoRows(err) {
+			return inventory.Product{}, inventory.ErrProductNotFound
+		}
+		return inventory.Product{}, err
+	}
+	return p, nil
+}
