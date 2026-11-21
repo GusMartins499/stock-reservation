@@ -1,10 +1,13 @@
-.PHONY: run test test-race cover fmt vet check test-v mutation db-up db-down db-psql
+.PHONY: run test test-integration test-race cover fmt vet check test-v mutation db-up db-down db-psql
 
 run:
 	go run ./cmd/api
 
 test:
 	go test ./...
+
+test-integration:
+	./scripts/test-integration.sh -v
 
 test-v:
 	go test ./... -v
