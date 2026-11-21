@@ -16,3 +16,7 @@ jobs:
       - run: make check
       - name: Fail if gofmt changed files
         run: git diff --exit-code
+      - name: Start Postgres
+        run: make db-up
+      - name: Run integration tests
+        run: make test-integration
