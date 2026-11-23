@@ -1,7 +1,10 @@
 .PHONY: run test test-integration test-race cover fmt vet check test-v mutation db-up db-down db-psql
 
+DATABASE_URL ?= postgres://stock:stock@localhost:5434/stock_reservation
+ADDR ?= :8080
+
 run:
-	go run ./cmd/api
+	DATABASE_URL=$(DATABASE_URL) ADDR=$(ADDR) go run ./cmd/api
 
 test:
 	go test ./...

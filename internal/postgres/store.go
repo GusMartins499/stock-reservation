@@ -47,3 +47,25 @@ func (s *Store) GetProduct(ctx context.Context, sku string) (inventory.Product, 
 	}
 	return p, nil
 }
+
+func (s *Store) Reserve(ctx context.Context, sku string, qty int) error {
+	if qty <= 0 {
+		return inventory.ErrInvalidQuantity
+	}
+
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE products SET stock = stock - $1 WHERE sku = $2 AND stock >= $1`,
+		qty, sku,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 1 {
+		return nil
+	}
+
+	if _, err := s.GetProduct(ctx, sku); err != nil {
+		return err
+	}
+	return inventory.ErrInsufficientStock
+}
