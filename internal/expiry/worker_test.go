@@ -109,6 +109,27 @@ func TestWorker_KeepsRunningAfterAnError(t *testing.T) {
 	})
 }
 
+func TestWorker_LogsOnlyBatchesThatExpiredReservations(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var logs bytes.Buffer
+		f := &fakeExpirer{results: []result{{n: 1}}}
+		cancel, done := startWorker(t, f, &logs)
+		defer func() { cancel(); <-done }()
+
+		synctest.Wait()
+		if got := logs.String(); !strings.Contains(got, "count=1") {
+			t.Errorf("logs after expiring one reservation = %q, want count=1", got)
+		}
+
+		logs.Reset()
+		time.Sleep(testInterval)
+		synctest.Wait()
+		if got := logs.String(); got != "" {
+			t.Errorf("logs after a batch with nothing due = %q, want none", got)
+		}
+	})
+}
+
 func TestWorker_StopsWhenContextIsCancelled(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		f := &fakeExpirer{}
