@@ -16,7 +16,7 @@ Go fundamentals (types, structs, interfaces, tests, goroutines, channels, mutex)
 
 - [x] Phase 1 — [tasks](tasks/phase-1.md)
 - [x] Phase 2 — [tasks](tasks/phase-2.md)
-- [ ] Phase 3 — [tasks](tasks/phase-3.md)
+- [x] Phase 3 — [tasks](tasks/phase-3.md)
 - [ ] Phase 4
 - [ ] Phase 5
 - [ ] Phase 6

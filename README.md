@@ -23,6 +23,10 @@ Concurrent in-memory core: HTTP API, a test that proves overselling under concur
 
 Stock in Postgres, shared by every instance of the service. A reservation is one conditional update, `UPDATE products SET stock = stock - $1 WHERE sku = $2 AND stock >= $1`: no lock held across round trips and no retries. A concurrency test runs 1000 buyers through two instances against 100 units and gets exactly 100 reservations.
 
+## Phase 3
+
+Reservations that expire. A reservation is `pending` until it is confirmed, cancelled or its `expires_at` passes; cancelling or expiring returns the units exactly once, and a confirmed reservation never expires. Every instance runs an expiry worker that returns stock in batches with `FOR UPDATE SKIP LOCKED`, and the service shuts down gracefully on `SIGTERM`. Notes: [English](docs/notes/phase-3.md) · [Português](docs/notes/phase-3.pt-BR.md).
+
 ## Running
 
 ```bash
@@ -32,6 +36,16 @@ make test-race
 ```
 
 `make run` connects to the Postgres from `docker-compose.yml`. Override `DATABASE_URL` or `ADDR` to point elsewhere, for example a second instance with `make run ADDR=:8081`.
+
+| Variable | Default | |
+|---|---|---|
+| `DATABASE_URL` | required | Postgres connection string |
+| `ADDR` | `:8080` | HTTP listen address |
+| `RESERVATION_TTL` | `10m` | how long a reservation holds stock |
+| `EXPIRY_INTERVAL` | `5s` | how often the worker looks for due reservations |
+| `EXPIRY_BATCH_SIZE` | `100` | reservations expired per statement |
+
+To see a reservation expire, run `RESERVATION_TTL=30s make run`.
 
 ## Endpoints
 
@@ -46,6 +60,18 @@ curl -i localhost:8080/products/PS5
 ```bash
 curl -i -X POST localhost:8080/reservations -d '{"sku":"PS5","quantity":2}'
 ```
+
+The response carries the reservation `id`, its `status` and `expires_at`. Confirm or cancel it with that id:
+
+```bash
+curl -i -X POST localhost:8080/reservations/<id>/confirm
+```
+
+```bash
+curl -i -X POST localhost:8080/reservations/<id>/cancel
+```
+
+Confirming or cancelling a reservation that is no longer pending, or confirming one that has expired, answers `409`. An unknown id answers `404`.
 
 ```bash
 curl -i localhost:8080/products/XBOX
