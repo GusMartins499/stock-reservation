@@ -1,10 +1,8 @@
 package inventory
 
 import (
-	"context"
 	"errors"
-	"strings"
-	"sync"
+	"time"
 )
 
 type Product struct {
@@ -13,68 +11,31 @@ type Product struct {
 	Stock int
 }
 
-var (
-	ErrProductNotFound      = errors.New("product not found")
-	ErrProductAlreadyExists = errors.New("product already exists")
-	ErrInsufficientStock    = errors.New("insufficient stock")
-	ErrInvalidQuantity      = errors.New("invalid quantity")
-	ErrInvalidSKU           = errors.New("invalid SKU")
+type ReservationStatus string
+
+const (
+	StatusPending   ReservationStatus = "pending"
+	StatusConfirmed ReservationStatus = "confirmed"
+	StatusCancelled ReservationStatus = "cancelled"
+	StatusExpired   ReservationStatus = "expired"
 )
 
-type Store struct {
-	mu       sync.Mutex
-	products map[string]*Product
+type Reservation struct {
+	ID        string
+	SKU       string
+	Quantity  int
+	Status    ReservationStatus
+	ExpiresAt time.Time
+	CreatedAt time.Time
 }
 
-func NewStore() *Store {
-	return &Store{products: make(map[string]*Product)}
-}
-
-func (s *Store) GetProduct(ctx context.Context, sku string) (Product, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if p, exists := s.products[sku]; exists {
-		return *p, nil
-	}
-	return Product{}, ErrProductNotFound
-}
-
-func (s *Store) Reserve(ctx context.Context, sku string, qty int) error {
-	if qty <= 0 {
-		return ErrInvalidQuantity
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	product, exists := s.products[sku]
-
-	if !exists {
-		return ErrProductNotFound
-	}
-
-	if product.Stock < qty {
-		return ErrInsufficientStock
-	}
-	product.Stock -= qty
-
-	return nil
-}
-
-func (s *Store) AddProduct(ctx context.Context, p Product) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if p.Stock < 0 {
-		return ErrInvalidQuantity
-	}
-	if strings.TrimSpace(p.SKU) == "" {
-		return ErrInvalidSKU
-	}
-	if _, exists := s.products[p.SKU]; exists {
-		return ErrProductAlreadyExists
-	}
-	s.products[p.SKU] = &p
-	return nil
-}
+var (
+	ErrProductNotFound       = errors.New("product not found")
+	ErrProductAlreadyExists  = errors.New("product already exists")
+	ErrInsufficientStock     = errors.New("insufficient stock")
+	ErrInvalidQuantity       = errors.New("invalid quantity")
+	ErrInvalidSKU            = errors.New("invalid SKU")
+	ErrReservationNotFound   = errors.New("reservation not found")
+	ErrReservationNotPending = errors.New("reservation is not pending")
+	ErrReservationExpired    = errors.New("reservation expired")
+)

@@ -1,6 +1,6 @@
 # Phase 2 — Postgres
 
-Goal: move the stock out of each process and into one shared place, so that two instances of the service cannot oversell. Same method as Phase 1: first a test that **proves** the bug, then the fix. This time the fix is a choice between two locking strategies, measured.
+Goal: move the stock out of each process and into one shared place, so that two instances of the service cannot oversell. The rule from Phase 1 still holds: a concurrency test with many buyers on one SKU is the proof that the stock never goes past what exists. This time the buyers are spread across two instances.
 
 ## Expected layout
 
@@ -80,47 +80,30 @@ Question to think about: `AddProduct` no longer needs to check whether the SKU e
 
 Because every case uses the same database, these tests cannot use `t.Parallel`. Packages also run in parallel by default, so keep every database test in this one package.
 
-## Day 5 — Prove the bug again
+## Day 5 — Two instances, one stock
 
-1. Write `Reserve` the naive way: `SELECT` the stock, check it in Go, `UPDATE` with the new value. No transaction.
-2. Port `TestReserve_ConcurrentBuyersNeverOversell` to `internal/postgres`, with one difference: create **two pools and two stores** on the same database, and alternate the goroutines between them. That is two instances of the service.
-3. Run it several times and write down the results. It goes into the notes.
+1. Port `TestReserve_ConcurrentBuyersNeverOversell` to `internal/postgres`, with one difference: create **two pools and two stores** on the same database, and alternate the goroutines between them. That is two instances of the service. Split the test helper so that opening a pool and cleaning the table are separate steps.
+2. Port the `TestReserve` table from `inventory`: the rules do not change with the storage.
+3. Write `Reserve` as a single conditional update:
 
-The test must be red. Commit it red, like in Phase 1: it is the history that tells the story.
+```sql
+UPDATE products SET stock = stock - $1 WHERE sku = $2 AND stock >= $1
+```
 
-Question to think about: `-race` found this bug in Phase 1. Will it find it now? Why?
+4. `RowsAffected() == 1` is a successful reservation. `0` means the SKU does not exist or the stock does not cover the quantity: only on that path, read the product to tell `ErrProductNotFound` from `ErrInsufficientStock`.
 
-## Day 6 — Fix 1: pessimistic locking
+The concurrency test must pass with `-count=20 -race`.
 
-Reading: [Explicit locking](https://www.postgresql.org/docs/current/explicit-locking.html), the *Row-Level Locks* section.
+Questions to think about:
 
-Rewrite `Reserve` with a transaction:
+- A `SELECT` followed by an `UPDATE` with the value computed in Go loses updates under concurrency. Why does `stock = stock - $1` not?
+- Why is this better than `SELECT ... FOR UPDATE` inside a transaction, or than optimistic locking with a `version` column and retries? Think about round trips, how long the row stays locked, and what happens to retries when a thousand buyers want the same row.
+- `-race` found the Phase 1 bug. Would it find a lost update in Postgres? Why?
 
-1. `pool.Begin(ctx)`, and `defer tx.Rollback(ctx)` right after it. Same idea as `defer Unlock`: it covers every `return`. After a `Commit`, the rollback does nothing.
-2. `SELECT stock FROM products WHERE sku = $1 FOR UPDATE`.
-3. Check the stock, `UPDATE`, `tx.Commit(ctx)`.
+## Day 6 — Serve from Postgres
 
-The Day 5 test must pass with `-count=20`.
+1. `cmd/api/main.go` requires `DATABASE_URL` and listens on `ADDR` (default `:8080`). It pings the database before serving, so a database that is down fails at startup instead of on the first request.
+2. `make run` points at the local Postgres from `docker-compose.yml`.
+3. Run two instances (`make run` and `make run ADDR=:8081`), reserve on both with `curl`, and see the same stock. The reservation that goes past it gets `409`.
 
-Question to think about: compare `FOR UPDATE` with the `sync.Mutex` from Phase 1. What is locked, where does the lock live, and why does it work across instances?
-
-## Day 7 — Fix 2: optimistic locking
-
-Reading: [Optimistic concurrency control](https://en.wikipedia.org/wiki/Optimistic_concurrency_control), the overview only.
-
-1. Add a `version` column to `products`.
-2. Write a second version of `Reserve`, with no `FOR UPDATE`: read `stock` and `version`, then `UPDATE ... WHERE sku = $1 AND version = $2`, incrementing `version`.
-3. Use `RowsAffected()`: `0` means another buyer got there first. Read again and retry, with a limit. When the limit runs out, return a new `inventory.ErrConflict` and map it to a status in `writeError`.
-
-Keep both versions available, for example as `Reserve` and `ReserveOptimistic`, so the benchmark can compare them. The same test must pass for both.
-
-Question to think about: `UPDATE products SET stock = stock - $1 WHERE sku = $2 AND stock >= $1` does everything in one statement. Which of the two strategies is it closer to, and what does it give up?
-
-## Day 8 — Measure and close
-
-1. `BenchmarkReserve` for both versions, with `b.RunParallel`. Compare with low contention (many SKUs) and high contention (one SKU, the flash-sale case).
-2. Choose the strategy that `Reserve` keeps, based on the numbers, and remove the other one.
-3. `cmd/api/main.go` connects with `DATABASE_URL`. Run two instances (`8080` and `8081`), reserve on both with `curl`, and see the same stock.
-4. Add to the Phase 2 notes, in `docs/notes/`: the results from Day 5, the benchmark table, the strategy you chose and why.
-
-`make check` must pass, and CI must be green. Done? Call me for the phase review.
+`make check` must pass, and CI must be green.

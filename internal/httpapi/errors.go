@@ -19,6 +19,12 @@ func writeError(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusConflict, errorJSON{Error: inventory.ErrProductAlreadyExists.Error()})
 	case errors.Is(err, inventory.ErrInsufficientStock):
 		writeJSON(w, http.StatusConflict, errorJSON{Error: inventory.ErrInsufficientStock.Error()})
+	case errors.Is(err, inventory.ErrReservationNotFound):
+		writeJSON(w, http.StatusNotFound, errorJSON{Error: inventory.ErrReservationNotFound.Error()})
+	case errors.Is(err, inventory.ErrReservationNotPending):
+		writeJSON(w, http.StatusConflict, errorJSON{Error: inventory.ErrReservationNotPending.Error()})
+	case errors.Is(err, inventory.ErrReservationExpired):
+		writeJSON(w, http.StatusConflict, errorJSON{Error: inventory.ErrReservationExpired.Error()})
 	case errors.Is(err, inventory.ErrInvalidQuantity):
 		writeJSON(w, http.StatusUnprocessableEntity, errorJSON{Error: inventory.ErrInvalidQuantity.Error()})
 	case errors.Is(err, inventory.ErrInvalidSKU):
