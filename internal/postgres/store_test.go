@@ -3,13 +3,15 @@ package postgres
 import (
 	"errors"
 	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/GusMartins499/stock-reservation/internal/inventory"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func newTestStore(t *testing.T) *Store {
+func newTestPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 
 	url := os.Getenv("TEST_DATABASE_URL")
@@ -23,11 +25,59 @@ func newTestStore(t *testing.T) *Store {
 	}
 	t.Cleanup(pool.Close)
 
+	return pool
+}
+
+func truncateProducts(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+
 	if _, err := pool.Exec(t.Context(), `TRUNCATE products`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
+}
+
+func newTestStore(t *testing.T) *Store {
+	t.Helper()
+
+	pool := newTestPool(t)
+	truncateProducts(t, pool)
 
 	return NewStore(pool)
+}
+
+func TestReserve_ConcurrentBuyersNeverOversell(t *testing.T) {
+	first := newTestPool(t)
+	second := newTestPool(t)
+	truncateProducts(t, first)
+
+	stores := []*Store{NewStore(first), NewStore(second)}
+	if err := stores[0].AddProduct(t.Context(), inventory.Product{SKU: "MAC", Name: "Macbook pro", Stock: 100}); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	var counter atomic.Int64
+
+	for i := range 1000 {
+		store := stores[i%len(stores)]
+		wg.Go(func() {
+			if err := store.Reserve(t.Context(), "MAC", 1); err == nil {
+				counter.Add(1)
+			}
+		})
+	}
+	wg.Wait()
+
+	if got := counter.Load(); got != 100 {
+		t.Errorf("successful reservations = %d, want 100", got)
+	}
+	p, err := stores[0].GetProduct(t.Context(), "MAC")
+	if err != nil {
+		t.Fatalf("GetProduct(%q) error = %v", "MAC", err)
+	}
+	if p.Stock != 0 {
+		t.Errorf("stock after concurrent reservations = %d, want 0", p.Stock)
+	}
 }
 
 func TestAddProduct(t *testing.T) {
@@ -115,6 +165,48 @@ func TestGetProduct(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("GetProduct(%q) = %v, want %v", tt.sku, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReserve(t *testing.T) {
+	const registeredSKU = "PS"
+
+	tests := []struct {
+		name      string
+		stock     int
+		sku       string
+		qty       int
+		wantErr   error
+		wantStock int
+	}{
+		{name: "reserves available units", stock: 5, sku: registeredSKU, qty: 1, wantStock: 4},
+		{name: "reserves entire stock", stock: 5, sku: registeredSKU, qty: 5, wantStock: 0},
+		{name: "rejects quantity above stock", stock: 1, sku: registeredSKU, qty: 2, wantErr: inventory.ErrInsufficientStock, wantStock: 1},
+		{name: "rejects sold out product", stock: 0, sku: registeredSKU, qty: 1, wantErr: inventory.ErrInsufficientStock, wantStock: 0},
+		{name: "rejects negative quantity", stock: 1, sku: registeredSKU, qty: -1, wantErr: inventory.ErrInvalidQuantity, wantStock: 1},
+		{name: "rejects unknown SKU", stock: 2, sku: "XBOX", qty: 1, wantErr: inventory.ErrProductNotFound, wantStock: 2},
+		{name: "rejects zero quantity", stock: 2, sku: registeredSKU, qty: 0, wantErr: inventory.ErrInvalidQuantity, wantStock: 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newTestStore(t)
+			if err := store.AddProduct(t.Context(), inventory.Product{SKU: registeredSKU, Name: "Playstation 5", Stock: tt.stock}); err != nil {
+				t.Fatalf("setup: %v", err)
+			}
+
+			err := store.Reserve(t.Context(), tt.sku, tt.qty)
+			if !errors.Is(err, tt.wantErr) {
+				t.Errorf("Reserve() error = %v, want %v", err, tt.wantErr)
+			}
+			got, err := store.GetProduct(t.Context(), registeredSKU)
+			if err != nil {
+				t.Fatalf("GetProduct() error = %v", err)
+			}
+			if got.Stock != tt.wantStock {
+				t.Errorf("Stock = %d, want %d", got.Stock, tt.wantStock)
 			}
 		})
 	}
