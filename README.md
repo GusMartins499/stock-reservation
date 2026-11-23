@@ -19,6 +19,10 @@ Work in progress — see [docs/ROADMAP.md](docs/ROADMAP.md).
 
 Concurrent in-memory core: HTTP API, a test that proves overselling under concurrent reservations, and the `sync.Mutex` fix. Notes: [English](docs/notes/phase-1.md) · [Português](docs/notes/phase-1.pt-BR.md).
 
+## Phase 2
+
+Stock in Postgres, shared by every instance of the service. A reservation is one conditional update, `UPDATE products SET stock = stock - $1 WHERE sku = $2 AND stock >= $1`: no lock held across round trips and no retries. A concurrency test runs 1000 buyers through two instances against 100 units and gets exactly 100 reservations.
+
 ## Running
 
 ```bash
