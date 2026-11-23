@@ -11,6 +11,8 @@ type Store interface {
 	AddProduct(ctx context.Context, p inventory.Product) error
 	GetProduct(ctx context.Context, sku string) (inventory.Product, error)
 	Reserve(ctx context.Context, sku string, qty int, ttl time.Duration) (inventory.Reservation, error)
+	ConfirmReservation(ctx context.Context, id string) (inventory.Reservation, error)
+	CancelReservation(ctx context.Context, id string) (inventory.Reservation, error)
 }
 
 type API struct {

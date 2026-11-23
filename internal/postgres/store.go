@@ -63,9 +63,9 @@ func (s *Store) Reserve(ctx context.Context, sku string, qty int, ttl time.Durat
 		)
 		INSERT INTO reservations (sku, quantity, expires_at)
 		SELECT sku, $2, now() + make_interval(secs => $3) FROM reserved
-		RETURNING id::text, sku, quantity, status, expires_at, created_at`,
+		RETURNING `+reservationColumns,
 		sku, qty, ttl.Seconds(),
-	).Scan(&r.ID, &r.SKU, &r.Quantity, &r.Status, &r.ExpiresAt, &r.CreatedAt)
+	).Scan(reservationFields(&r)...)
 	if err == nil {
 		return r, nil
 	}
@@ -77,4 +77,77 @@ func (s *Store) Reserve(ctx context.Context, sku string, qty int, ttl time.Durat
 		return inventory.Reservation{}, err
 	}
 	return inventory.Reservation{}, inventory.ErrInsufficientStock
+}
+
+func (s *Store) ConfirmReservation(ctx context.Context, id string) (inventory.Reservation, error) {
+	var r inventory.Reservation
+	err := s.pool.QueryRow(ctx, `
+		UPDATE reservations SET status = 'confirmed'
+		WHERE id = $1 AND status = 'pending' AND expires_at > now()
+		RETURNING `+reservationColumns,
+		id,
+	).Scan(reservationFields(&r)...)
+	if err == nil {
+		return r, nil
+	}
+	if !isNoRows(err) {
+		return inventory.Reservation{}, reservationLookupError(err)
+	}
+	return inventory.Reservation{}, s.whyNotPending(ctx, id)
+}
+
+func (s *Store) CancelReservation(ctx context.Context, id string) (inventory.Reservation, error) {
+	var r inventory.Reservation
+	err := s.pool.QueryRow(ctx, `
+		WITH cancelled AS (
+			UPDATE reservations SET status = 'cancelled'
+			WHERE id = $1 AND status = 'pending'
+			RETURNING *
+		), restocked AS (
+			UPDATE products p SET stock = p.stock + c.quantity
+			FROM cancelled c
+			WHERE p.sku = c.sku
+		)
+		SELECT `+reservationColumns+` FROM cancelled`,
+		id,
+	).Scan(reservationFields(&r)...)
+	if err == nil {
+		return r, nil
+	}
+	if !isNoRows(err) {
+		return inventory.Reservation{}, reservationLookupError(err)
+	}
+	return inventory.Reservation{}, s.whyNotPending(ctx, id)
+}
+
+func (s *Store) whyNotPending(ctx context.Context, id string) error {
+	var r inventory.Reservation
+	var expired bool
+	err := s.pool.QueryRow(ctx,
+		`SELECT `+reservationColumns+`, expires_at <= now() FROM reservations WHERE id = $1`,
+		id,
+	).Scan(append(reservationFields(&r), &expired)...)
+	if err != nil {
+		if isNoRows(err) {
+			return inventory.ErrReservationNotFound
+		}
+		return reservationLookupError(err)
+	}
+	if r.Status == inventory.StatusPending && expired {
+		return inventory.ErrReservationExpired
+	}
+	return inventory.ErrReservationNotPending
+}
+
+const reservationColumns = `id::text, sku, quantity, status, expires_at, created_at`
+
+func reservationFields(r *inventory.Reservation) []any {
+	return []any{&r.ID, &r.SKU, &r.Quantity, &r.Status, &r.ExpiresAt, &r.CreatedAt}
+}
+
+func reservationLookupError(err error) error {
+	if isInvalidText(err) {
+		return inventory.ErrReservationNotFound
+	}
+	return err
 }

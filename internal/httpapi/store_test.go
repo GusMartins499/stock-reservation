@@ -16,6 +16,8 @@ type fakeStore struct {
 	reservedSKU string
 	reservedQty int
 	reservedTTL time.Duration
+	confirmedID string
+	cancelledID string
 }
 
 func (f *fakeStore) AddProduct(_ context.Context, p inventory.Product) error {
@@ -29,5 +31,15 @@ func (f *fakeStore) GetProduct(context.Context, string) (inventory.Product, erro
 
 func (f *fakeStore) Reserve(_ context.Context, sku string, qty int, ttl time.Duration) (inventory.Reservation, error) {
 	f.reservedSKU, f.reservedQty, f.reservedTTL = sku, qty, ttl
+	return f.reservation, f.err
+}
+
+func (f *fakeStore) ConfirmReservation(_ context.Context, id string) (inventory.Reservation, error) {
+	f.confirmedID = id
+	return f.reservation, f.err
+}
+
+func (f *fakeStore) CancelReservation(_ context.Context, id string) (inventory.Reservation, error) {
+	f.cancelledID = id
 	return f.reservation, f.err
 }

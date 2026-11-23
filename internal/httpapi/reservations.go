@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -47,4 +48,26 @@ func (api *API) createReservation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusCreated, toReservationResponse(reservation))
+}
+
+func (api *API) confirmReservation(w http.ResponseWriter, r *http.Request) {
+	api.transitionReservation(w, r, api.store.ConfirmReservation)
+}
+
+func (api *API) cancelReservation(w http.ResponseWriter, r *http.Request) {
+	api.transitionReservation(w, r, api.store.CancelReservation)
+}
+
+func (api *API) transitionReservation(
+	w http.ResponseWriter,
+	r *http.Request,
+	transition func(context.Context, string) (inventory.Reservation, error),
+) {
+	reservation, err := transition(r.Context(), r.PathValue("id"))
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, toReservationResponse(reservation))
 }

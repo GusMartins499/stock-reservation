@@ -37,4 +37,5 @@ var (
 	ErrInvalidSKU            = errors.New("invalid SKU")
 	ErrReservationNotFound   = errors.New("reservation not found")
 	ErrReservationNotPending = errors.New("reservation is not pending")
+	ErrReservationExpired    = errors.New("reservation expired")
 )
