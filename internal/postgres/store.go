@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/GusMartins499/stock-reservation/internal/inventory"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -48,24 +49,32 @@ func (s *Store) GetProduct(ctx context.Context, sku string) (inventory.Product, 
 	return p, nil
 }
 
-func (s *Store) Reserve(ctx context.Context, sku string, qty int) error {
+func (s *Store) Reserve(ctx context.Context, sku string, qty int, ttl time.Duration) (inventory.Reservation, error) {
 	if qty <= 0 {
-		return inventory.ErrInvalidQuantity
+		return inventory.Reservation{}, inventory.ErrInvalidQuantity
 	}
 
-	tag, err := s.pool.Exec(ctx,
-		`UPDATE products SET stock = stock - $1 WHERE sku = $2 AND stock >= $1`,
-		qty, sku,
-	)
-	if err != nil {
-		return err
+	var r inventory.Reservation
+	err := s.pool.QueryRow(ctx, `
+		WITH reserved AS (
+			UPDATE products SET stock = stock - $2
+			WHERE sku = $1 AND stock >= $2
+			RETURNING sku
+		)
+		INSERT INTO reservations (sku, quantity, expires_at)
+		SELECT sku, $2, now() + make_interval(secs => $3) FROM reserved
+		RETURNING id::text, sku, quantity, status, expires_at, created_at`,
+		sku, qty, ttl.Seconds(),
+	).Scan(&r.ID, &r.SKU, &r.Quantity, &r.Status, &r.ExpiresAt, &r.CreatedAt)
+	if err == nil {
+		return r, nil
 	}
-	if tag.RowsAffected() == 1 {
-		return nil
+	if !isNoRows(err) {
+		return inventory.Reservation{}, err
 	}
 
 	if _, err := s.GetProduct(ctx, sku); err != nil {
-		return err
+		return inventory.Reservation{}, err
 	}
-	return inventory.ErrInsufficientStock
+	return inventory.Reservation{}, inventory.ErrInsufficientStock
 }

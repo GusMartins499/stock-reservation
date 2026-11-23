@@ -6,10 +6,23 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/GusMartins499/stock-reservation/internal/inventory"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+const testTTL = 10 * time.Minute
+
+func countReservations(t *testing.T, pool *pgxpool.Pool) int {
+	t.Helper()
+
+	var n int
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM reservations`).Scan(&n); err != nil {
+		t.Fatalf("count reservations: %v", err)
+	}
+	return n
+}
 
 func newTestPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
@@ -31,7 +44,7 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 func truncateProducts(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 
-	if _, err := pool.Exec(t.Context(), `TRUNCATE products`); err != nil {
+	if _, err := pool.Exec(t.Context(), `TRUNCATE reservations, products`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 }
@@ -61,7 +74,7 @@ func TestReserve_ConcurrentBuyersNeverOversell(t *testing.T) {
 	for i := range 1000 {
 		store := stores[i%len(stores)]
 		wg.Go(func() {
-			if err := store.Reserve(t.Context(), "MAC", 1); err == nil {
+			if _, err := store.Reserve(t.Context(), "MAC", 1, testTTL); err == nil {
 				counter.Add(1)
 			}
 		})
@@ -77,6 +90,9 @@ func TestReserve_ConcurrentBuyersNeverOversell(t *testing.T) {
 	}
 	if p.Stock != 0 {
 		t.Errorf("stock after concurrent reservations = %d, want 0", p.Stock)
+	}
+	if got := countReservations(t, first); got != 100 {
+		t.Errorf("reservations created = %d, want 100", got)
 	}
 }
 
@@ -192,14 +208,32 @@ func TestReserve(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := newTestStore(t)
+			pool := newTestPool(t)
+			truncateProducts(t, pool)
+			store := NewStore(pool)
 			if err := store.AddProduct(t.Context(), inventory.Product{SKU: registeredSKU, Name: "Playstation 5", Stock: tt.stock}); err != nil {
 				t.Fatalf("setup: %v", err)
 			}
 
-			err := store.Reserve(t.Context(), tt.sku, tt.qty)
+			r, err := store.Reserve(t.Context(), tt.sku, tt.qty, testTTL)
 			if !errors.Is(err, tt.wantErr) {
 				t.Errorf("Reserve() error = %v, want %v", err, tt.wantErr)
+			}
+			wantReservations := 0
+			if tt.wantErr == nil {
+				wantReservations = 1
+				if r.ID == "" {
+					t.Error("Reserve() returned an empty ID")
+				}
+				if r.SKU != tt.sku || r.Quantity != tt.qty || r.Status != inventory.StatusPending {
+					t.Errorf("Reserve() = %+v, want SKU %q, quantity %d, status %q", r, tt.sku, tt.qty, inventory.StatusPending)
+				}
+				if got := r.ExpiresAt.Sub(r.CreatedAt); got != testTTL {
+					t.Errorf("ExpiresAt - CreatedAt = %v, want %v", got, testTTL)
+				}
+			}
+			if got := countReservations(t, pool); got != wantReservations {
+				t.Errorf("reservations created = %d, want %d", got, wantReservations)
 			}
 			got, err := store.GetProduct(t.Context(), registeredSKU)
 			if err != nil {
