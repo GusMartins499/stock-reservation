@@ -22,9 +22,12 @@ Concurrent in-memory core: HTTP API, a test that proves overselling under concur
 ## Running
 
 ```bash
+make db-up
 make run
 make test-race
 ```
+
+`make run` connects to the Postgres from `docker-compose.yml`. Override `DATABASE_URL` or `ADDR` to point elsewhere, for example a second instance with `make run ADDR=:8081`.
 
 ## Endpoints
 
