@@ -173,3 +173,51 @@ func TestExpireDue_RacingCancelReturnsStockOnce(t *testing.T) {
 		assertStock(t, first, 5)
 	}
 }
+
+func TestExpireDue_RacingConfirmHasOneWinner(t *testing.T) {
+	for i := range 20 {
+		first, r := newReservedStore(t, 5, 2, 50*time.Millisecond)
+		second := NewStore(newTestPool(t))
+		if err := second.pool.Ping(t.Context()); err != nil {
+			t.Fatalf("setup: Ping: %v", err)
+		}
+		time.Sleep(time.Until(r.ExpiresAt) - time.Duration(i%10)*time.Millisecond)
+
+		var wg sync.WaitGroup
+		var expired int
+		var expireErr, confirmErr error
+		wg.Go(func() { expired, expireErr = first.ExpireDue(t.Context(), 10) })
+		wg.Go(func() { _, confirmErr = second.ConfirmReservation(t.Context(), r.ID) })
+		wg.Wait()
+
+		if expireErr != nil {
+			t.Fatalf("ExpireDue() error = %v", expireErr)
+		}
+		time.Sleep(time.Until(r.ExpiresAt))
+		again, err := first.ExpireDue(t.Context(), 10)
+		if err != nil {
+			t.Fatalf("second ExpireDue() error = %v", err)
+		}
+
+		switch {
+		case confirmErr == nil:
+			if expired+again != 0 {
+				t.Errorf("expirations = %d, want 0 after a successful confirm", expired+again)
+			}
+			if got := statusOf(t, first, r.ID); got != inventory.StatusConfirmed {
+				t.Errorf("status = %q, want %q", got, inventory.StatusConfirmed)
+			}
+			assertStock(t, first, 3)
+		case errors.Is(confirmErr, inventory.ErrReservationNotPending), errors.Is(confirmErr, inventory.ErrReservationExpired):
+			if expired+again != 1 {
+				t.Errorf("expirations = %d, want 1 after a failed confirm", expired+again)
+			}
+			if got := statusOf(t, first, r.ID); got != inventory.StatusExpired {
+				t.Errorf("status = %q, want %q", got, inventory.StatusExpired)
+			}
+			assertStock(t, first, 5)
+		default:
+			t.Fatalf("confirm error = %v, want success, %v or %v", confirmErr, inventory.ErrReservationNotPending, inventory.ErrReservationExpired)
+		}
+	}
+}
