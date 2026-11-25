@@ -27,6 +27,8 @@ type config struct {
 	reservationTTL  time.Duration
 	expiryInterval  time.Duration
 	expiryBatchSize int
+	keyTTL          time.Duration
+	keyInterval     time.Duration
 }
 
 func main() {
@@ -61,15 +63,26 @@ func run() error {
 		Handler:           httpapi.NewAPI(store, cfg.reservationTTL).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	worker := expiry.Worker{
+	reservations := expiry.Worker{
+		Name:      "reservations",
 		Expire:    store.ExpireDue,
 		Interval:  cfg.expiryInterval,
 		BatchSize: cfg.expiryBatchSize,
 		Logger:    slog.Default(),
 	}
+	keys := expiry.Worker{
+		Name: "idempotency_keys",
+		Expire: func(ctx context.Context, limit int) (int, error) {
+			return store.DeleteIdempotencyKeys(ctx, cfg.keyTTL, limit)
+		},
+		Interval:  cfg.keyInterval,
+		BatchSize: cfg.expiryBatchSize,
+		Logger:    slog.Default(),
+	}
 
 	var wg sync.WaitGroup
-	wg.Go(func() { worker.Run(ctx) })
+	wg.Go(func() { reservations.Run(ctx) })
+	wg.Go(func() { keys.Run(ctx) })
 
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.ListenAndServe() }()
@@ -108,6 +121,12 @@ func loadConfig() (config, error) {
 		return config{}, err
 	}
 	if cfg.expiryBatchSize, err = positiveInt("EXPIRY_BATCH_SIZE", 100); err != nil {
+		return config{}, err
+	}
+	if cfg.keyTTL, err = positiveDuration("IDEMPOTENCY_KEY_TTL", 24*time.Hour); err != nil {
+		return config{}, err
+	}
+	if cfg.keyInterval, err = positiveDuration("IDEMPOTENCY_KEY_CLEANUP_INTERVAL", time.Minute); err != nil {
 		return config{}, err
 	}
 	return cfg, nil

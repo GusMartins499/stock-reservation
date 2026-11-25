@@ -9,6 +9,7 @@ import (
 type ExpireFunc func(ctx context.Context, limit int) (int, error)
 
 type Worker struct {
+	Name      string
 	Expire    ExpireFunc
 	Interval  time.Duration
 	BatchSize int
@@ -35,12 +36,12 @@ func (w Worker) drain(ctx context.Context) {
 		n, err := w.Expire(ctx, w.BatchSize)
 		if err != nil {
 			if ctx.Err() == nil {
-				w.Logger.Error("expire reservations", "err", err)
+				w.Logger.Error("batch failed", "worker", w.Name, "err", err)
 			}
 			return
 		}
 		if n > 0 {
-			w.Logger.Info("expired reservations", "count", n)
+			w.Logger.Info("batch done", "worker", w.Name, "count", n)
 		}
 		if n < w.BatchSize {
 			return
