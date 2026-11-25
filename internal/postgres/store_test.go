@@ -44,7 +44,7 @@ func newTestPool(t *testing.T) *pgxpool.Pool {
 func truncateProducts(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 
-	if _, err := pool.Exec(t.Context(), `TRUNCATE reservations, products`); err != nil {
+	if _, err := pool.Exec(t.Context(), `TRUNCATE idempotency_keys, reservations, products`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 }

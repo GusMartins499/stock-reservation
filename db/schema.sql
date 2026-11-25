@@ -14,3 +14,11 @@ CREATE TABLE reservations (
 );
 
 CREATE INDEX reservations_pending_expires_at_idx ON reservations (expires_at) WHERE status = 'pending';
+
+CREATE TABLE idempotency_keys (
+  key TEXT PRIMARY KEY,
+  reservation_id uuid REFERENCES reservations (id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idempotency_keys_created_at_idx ON idempotency_keys (created_at);
