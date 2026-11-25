@@ -14,6 +14,7 @@ import (
 const testTTL = 10 * time.Minute
 
 func TestAPI_CreateReservation(t *testing.T) {
+	const key = "8e03978e-40d5-43e8-bc93-6894a57f9324"
 	expiresAt := time.Date(2026, 11, 27, 12, 10, 0, 0, time.UTC)
 	pending := inventory.Reservation{
 		ID:        "6f1c2b9e-3d4a-4b5c-8e7f-1a2b3c4d5e6f",
@@ -22,33 +23,58 @@ func TestAPI_CreateReservation(t *testing.T) {
 		Status:    inventory.StatusPending,
 		ExpiresAt: expiresAt,
 	}
+	created := reservationJSON{
+		ID:        pending.ID,
+		SKU:       "PS",
+		Quantity:  1,
+		Status:    "pending",
+		ExpiresAt: expiresAt,
+	}
 
 	tests := []struct {
 		name            string
 		body            string
+		key             []string
 		reservation     inventory.Reservation
+		replayed        bool
 		storeErr        error
 		wantStatus      int
 		wantReservation reservationJSON
+		wantReplayed    string
 		wantStoreCalled bool
 	}{
 		{
-			name:        "returns 201 and the pending reservation",
-			body:        `{"sku": "PS", "quantity": 1}`,
-			reservation: pending,
-			wantStatus:  http.StatusCreated,
-			wantReservation: reservationJSON{
-				ID:        pending.ID,
-				SKU:       "PS",
-				Quantity:  1,
-				Status:    "pending",
-				ExpiresAt: expiresAt,
-			},
+			name:            "returns 201 and the pending reservation",
+			body:            `{"sku": "PS", "quantity": 1}`,
+			key:             []string{key},
+			reservation:     pending,
+			wantStatus:      http.StatusCreated,
+			wantReservation: created,
+			wantStoreCalled: true,
+		},
+		{
+			name:            "returns 201 and marks a replayed reservation",
+			body:            `{"sku": "PS", "quantity": 1}`,
+			key:             []string{key},
+			reservation:     pending,
+			replayed:        true,
+			wantStatus:      http.StatusCreated,
+			wantReservation: created,
+			wantReplayed:    "true",
+			wantStoreCalled: true,
+		},
+		{
+			name:            "returns 422 when the key was used for a different request",
+			body:            `{"sku": "PS", "quantity": 1}`,
+			key:             []string{key},
+			storeErr:        inventory.ErrIdempotencyKeyReused,
+			wantStatus:      http.StatusUnprocessableEntity,
 			wantStoreCalled: true,
 		},
 		{
 			name:            "returns 409 when insufficient stock",
 			body:            `{"sku": "PS", "quantity": 1}`,
+			key:             []string{key},
 			storeErr:        inventory.ErrInsufficientStock,
 			wantStatus:      http.StatusConflict,
 			wantStoreCalled: true,
@@ -56,6 +82,7 @@ func TestAPI_CreateReservation(t *testing.T) {
 		{
 			name:            "returns 422 when invalid quantity",
 			body:            `{"sku": "PS", "quantity": 1}`,
+			key:             []string{key},
 			storeErr:        inventory.ErrInvalidQuantity,
 			wantStatus:      http.StatusUnprocessableEntity,
 			wantStoreCalled: true,
@@ -63,6 +90,7 @@ func TestAPI_CreateReservation(t *testing.T) {
 		{
 			name:            "returns 404 for unknown SKU",
 			body:            `{"sku": "PS", "quantity": 1}`,
+			key:             []string{key},
 			storeErr:        inventory.ErrProductNotFound,
 			wantStatus:      http.StatusNotFound,
 			wantStoreCalled: true,
@@ -70,20 +98,51 @@ func TestAPI_CreateReservation(t *testing.T) {
 		{
 			name:       "returns 400 when invalid body",
 			body:       `{"sku": "PS", "quantity": "one"}`,
+			key:        []string{key},
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name:       "returns 400 for unknown field",
 			body:       `{"sku": "PS", "qty": 1}`,
+			key:        []string{key},
 			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "returns 400 without an idempotency key",
+			body:       `{"sku": "PS", "quantity": 1}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "returns 400 for a blank idempotency key",
+			body:       `{"sku": "PS", "quantity": 1}`,
+			key:        []string{"   "},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "returns 400 for an idempotency key over 255 characters",
+			body:       `{"sku": "PS", "quantity": 1}`,
+			key:        []string{strings.Repeat("k", 256)},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:            "accepts an idempotency key of 255 characters",
+			body:            `{"sku": "PS", "quantity": 1}`,
+			key:             []string{strings.Repeat("k", 255)},
+			reservation:     pending,
+			wantStatus:      http.StatusCreated,
+			wantReservation: created,
+			wantStoreCalled: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := &fakeStore{reservation: tt.reservation, err: tt.storeErr}
+			store := &fakeStore{reservation: tt.reservation, replayed: tt.replayed, err: tt.storeErr}
 			api := NewAPI(store, testTTL)
 			req := httptest.NewRequest(http.MethodPost, "/reservations", strings.NewReader(tt.body))
+			for _, k := range tt.key {
+				req.Header.Set("Idempotency-Key", k)
+			}
 			rec := httptest.NewRecorder()
 			api.Routes().ServeHTTP(rec, req)
 
@@ -93,12 +152,16 @@ func TestAPI_CreateReservation(t *testing.T) {
 			if contentType := rec.Header().Get("Content-Type"); contentType != "application/json" {
 				t.Errorf("POST /reservations Content-Type = %q, want %q", contentType, "application/json")
 			}
+			if got := rec.Header().Get("Idempotent-Replayed"); got != tt.wantReplayed {
+				t.Errorf("POST /reservations Idempotent-Replayed = %q, want %q", got, tt.wantReplayed)
+			}
 			if tt.wantStoreCalled {
-				if store.reservedSKU != "PS" || store.reservedQty != 1 || store.reservedTTL != testTTL {
-					t.Errorf("Reserve() got (%q, %d, %v), want (%q, %d, %v)", store.reservedSKU, store.reservedQty, store.reservedTTL, "PS", 1, testTTL)
+				want := inventory.ReservationRequest{Key: tt.key[0], SKU: "PS", Quantity: 1, TTL: testTTL}
+				if store.reserved != want {
+					t.Errorf("ReserveOnce() got %+v, want %+v", store.reserved, want)
 				}
-			} else if store.reservedSKU != "" {
-				t.Errorf("Reserve() called with %q, want no call", store.reservedSKU)
+			} else if store.reserveCalled {
+				t.Errorf("ReserveOnce() called with %+v, want no call", store.reserved)
 			}
 			if tt.wantStatus == http.StatusCreated {
 				var got reservationJSON

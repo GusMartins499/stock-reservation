@@ -41,12 +41,20 @@ func (api *API) createReservation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reservation, err := api.store.Reserve(r.Context(), req.SKU, req.Quantity, api.reservationTTL)
+	reservation, replayed, err := api.store.ReserveOnce(r.Context(), inventory.ReservationRequest{
+		Key:      idempotencyKeyFrom(r.Context()),
+		SKU:      req.SKU,
+		Quantity: req.Quantity,
+		TTL:      api.reservationTTL,
+	})
 	if err != nil {
 		writeError(w, err)
 		return
 	}
 
+	if replayed {
+		w.Header().Set(idempotentReplayedHeader, "true")
+	}
 	writeJSON(w, http.StatusCreated, toReservationResponse(reservation))
 }
 
