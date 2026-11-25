@@ -29,6 +29,13 @@ type Reservation struct {
 	CreatedAt time.Time
 }
 
+type ReservationRequest struct {
+	Key      string
+	SKU      string
+	Quantity int
+	TTL      time.Duration
+}
+
 var (
 	ErrProductNotFound       = errors.New("product not found")
 	ErrProductAlreadyExists  = errors.New("product already exists")
@@ -38,4 +45,6 @@ var (
 	ErrReservationNotFound   = errors.New("reservation not found")
 	ErrReservationNotPending = errors.New("reservation is not pending")
 	ErrReservationExpired    = errors.New("reservation expired")
+	ErrInvalidIdempotencyKey = errors.New("invalid idempotency key")
+	ErrIdempotencyKeyReused  = errors.New("idempotency key reused with a different request")
 )

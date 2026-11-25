@@ -27,6 +27,10 @@ Stock in Postgres, shared by every instance of the service. A reservation is one
 
 Reservations that expire. A reservation is `pending` until it is confirmed, cancelled or its `expires_at` passes; cancelling or expiring returns the units exactly once, and a confirmed reservation never expires. Every instance runs an expiry worker that returns stock in batches with `FOR UPDATE SKIP LOCKED`, and the service shuts down gracefully on `SIGTERM`. Notes: [English](docs/notes/phase-3.md) · [Português](docs/notes/phase-3.pt-BR.md).
 
+## Phase 4
+
+Idempotent reservations. `POST /reservations` requires an `Idempotency-Key` header: a retry with the same key gets the same reservation back, with `Idempotent-Replayed: true`, instead of taking stock again. The key is inserted in the same transaction as the stock decrement, so a crash at any point can never leave a reservation without its key. Concurrent retries wait on the primary key and replay. A test sends 50 concurrent retries and gets one reservation. Notes: [English](docs/notes/phase-4.md) · [Português](docs/notes/phase-4.pt-BR.md).
+
 ## Running
 
 ```bash
@@ -43,7 +47,9 @@ make test-race
 | `ADDR` | `:8080` | HTTP listen address |
 | `RESERVATION_TTL` | `10m` | how long a reservation holds stock |
 | `EXPIRY_INTERVAL` | `5s` | how often the worker looks for due reservations |
-| `EXPIRY_BATCH_SIZE` | `100` | reservations expired per statement |
+| `EXPIRY_BATCH_SIZE` | `100` | reservations expired, or keys deleted, per statement |
+| `IDEMPOTENCY_KEY_TTL` | `24h` | how long an idempotency key is remembered |
+| `IDEMPOTENCY_KEY_CLEANUP_INTERVAL` | `1m` | how often old keys are deleted |
 
 To see a reservation expire, run `RESERVATION_TTL=30s make run`.
 
@@ -58,8 +64,10 @@ curl -i localhost:8080/products/PS5
 ```
 
 ```bash
-curl -i -X POST localhost:8080/reservations -d '{"sku":"PS5","quantity":2}'
+curl -i -X POST localhost:8080/reservations -H "Idempotency-Key: $(uuidgen)" -d '{"sku":"PS5","quantity":2}'
 ```
+
+Generate one key per purchase attempt and send the same key on every retry of it. A retry answers `201` with the same reservation and `Idempotent-Replayed: true`. The same key with a different body answers `422`, and a missing key answers `400`.
 
 The response carries the reservation `id`, its `status` and `expires_at`. Confirm or cancel it with that id:
 

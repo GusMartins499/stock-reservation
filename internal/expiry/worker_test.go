@@ -48,6 +48,7 @@ func startWorker(t *testing.T, f *fakeExpirer, logs io.Writer) (cancel func(), d
 	ctx, cancel := context.WithCancel(t.Context())
 	finished := make(chan struct{})
 	w := Worker{
+		Name:      "test",
 		Expire:    f.expire,
 		Interval:  testInterval,
 		BatchSize: testBatchSize,
@@ -117,8 +118,8 @@ func TestWorker_LogsOnlyBatchesThatExpiredReservations(t *testing.T) {
 		defer func() { cancel(); <-done }()
 
 		synctest.Wait()
-		if got := logs.String(); !strings.Contains(got, "count=1") {
-			t.Errorf("logs after expiring one reservation = %q, want count=1", got)
+		if got := logs.String(); !strings.Contains(got, "worker=test") || !strings.Contains(got, "count=1") {
+			t.Errorf("logs after expiring one reservation = %q, want worker=test and count=1", got)
 		}
 
 		logs.Reset()

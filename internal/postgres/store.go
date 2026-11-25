@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/GusMartins499/stock-reservation/internal/inventory"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -49,13 +50,21 @@ func (s *Store) GetProduct(ctx context.Context, sku string) (inventory.Product, 
 	return p, nil
 }
 
+type querier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 func (s *Store) Reserve(ctx context.Context, sku string, qty int, ttl time.Duration) (inventory.Reservation, error) {
+	return reserve(ctx, s.pool, sku, qty, ttl)
+}
+
+func reserve(ctx context.Context, q querier, sku string, qty int, ttl time.Duration) (inventory.Reservation, error) {
 	if qty <= 0 {
 		return inventory.Reservation{}, inventory.ErrInvalidQuantity
 	}
 
 	var r inventory.Reservation
-	err := s.pool.QueryRow(ctx, `
+	err := q.QueryRow(ctx, `
 		WITH reserved AS (
 			UPDATE products SET stock = stock - $2
 			WHERE sku = $1 AND stock >= $2
@@ -73,8 +82,12 @@ func (s *Store) Reserve(ctx context.Context, sku string, qty int, ttl time.Durat
 		return inventory.Reservation{}, err
 	}
 
-	if _, err := s.GetProduct(ctx, sku); err != nil {
+	var exists bool
+	if err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM products WHERE sku = $1)`, sku).Scan(&exists); err != nil {
 		return inventory.Reservation{}, err
+	}
+	if !exists {
+		return inventory.Reservation{}, inventory.ErrProductNotFound
 	}
 	return inventory.Reservation{}, inventory.ErrInsufficientStock
 }
@@ -139,7 +152,10 @@ func (s *Store) whyNotPending(ctx context.Context, id string) error {
 	return inventory.ErrReservationNotPending
 }
 
-const reservationColumns = `id::text, sku, quantity, status, expires_at, created_at`
+const (
+	reservationColumns          = `id::text, sku, quantity, status, expires_at, created_at`
+	qualifiedReservationColumns = `r.id::text, r.sku, r.quantity, r.status, r.expires_at, r.created_at`
+)
 
 func reservationFields(r *inventory.Reservation) []any {
 	return []any{&r.ID, &r.SKU, &r.Quantity, &r.Status, &r.ExpiresAt, &r.CreatedAt}

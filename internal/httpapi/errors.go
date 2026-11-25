@@ -29,6 +29,10 @@ func writeError(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusUnprocessableEntity, errorJSON{Error: inventory.ErrInvalidQuantity.Error()})
 	case errors.Is(err, inventory.ErrInvalidSKU):
 		writeJSON(w, http.StatusBadRequest, errorJSON{Error: inventory.ErrInvalidSKU.Error()})
+	case errors.Is(err, inventory.ErrInvalidIdempotencyKey):
+		writeJSON(w, http.StatusBadRequest, errorJSON{Error: inventory.ErrInvalidIdempotencyKey.Error()})
+	case errors.Is(err, inventory.ErrIdempotencyKeyReused):
+		writeJSON(w, http.StatusUnprocessableEntity, errorJSON{Error: inventory.ErrIdempotencyKeyReused.Error()})
 	default:
 		writeJSON(w, http.StatusInternalServerError, errorJSON{Error: "internal server error"})
 	}
