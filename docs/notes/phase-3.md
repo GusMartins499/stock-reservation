@@ -21,7 +21,7 @@ Reserve and cancel touch two tables, so each one is a data-modifying CTE: the st
 
 ## Why the database clock
 
-Confirm checks `expires_at > now()` and the expirer checks `expires_at <= now()`, both in SQL. With the clock of each instance, two instances a few seconds apart could disagree: one accepts a confirmation while the other has already returned the units. With `now()` there is one clock, and confirm and expire can never both win.
+Confirm checks `expires_at > now()` and the expirer checks `expires_at <= now()`, both in SQL. With the clock of each instance, two instances a few seconds apart could disagree: one accepts a confirmation while the other has already returned the units. With `now()` there is one clock, and confirm and expire can never both win. A test fires a confirm and `ExpireDue` on the same reservation from two pools, around its `expires_at`, twenty times: either the confirm wins and nothing expires, or the confirm is refused and the units come back exactly once.
 
 ## The expirer
 

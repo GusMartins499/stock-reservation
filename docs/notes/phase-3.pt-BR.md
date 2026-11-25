@@ -21,7 +21,7 @@ Reservar e cancelar mexem em duas tabelas, então cada um é uma CTE que modific
 
 ## Por que o relógio do banco
 
-Confirmar verifica `expires_at > now()` e o expirador verifica `expires_at <= now()`, os dois em SQL. Com o relógio de cada instância, duas instâncias com alguns segundos de diferença poderiam discordar: uma aceita a confirmação enquanto a outra já devolveu as unidades. Com `now()` existe um relógio só, e confirmar e expirar nunca ganham os dois.
+Confirmar verifica `expires_at > now()` e o expirador verifica `expires_at <= now()`, os dois em SQL. Com o relógio de cada instância, duas instâncias com alguns segundos de diferença poderiam discordar: uma aceita a confirmação enquanto a outra já devolveu as unidades. Com `now()` existe um relógio só, e confirmar e expirar nunca ganham os dois. Um teste dispara uma confirmação e um `ExpireDue` na mesma reserva, a partir de dois pools e perto do `expires_at` dela, vinte vezes: ou a confirmação vence e nada expira, ou a confirmação é recusada e as unidades voltam exatamente uma vez.
 
 ## O expirador
 
